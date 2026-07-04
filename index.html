@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>天気予報 - 高松・東京・名古屋</title>
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f5f5;
+    color: #222;
+    min-height: 100vh;
+  }
+
+  header {
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 16px 20px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  header p {
+    font-size: 12px;
+    color: #888;
+    margin-top: 4px;
+  }
+
+  .container {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 16px 16px 80px;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  @media (min-width: 640px) {
+    .cards {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .city-name {
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .updated {
+    font-size: 11px;
+    color: #999;
+  }
+
+  .current {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 14px 0 10px;
+  }
+
+  .current .icon {
+    font-size: 40px;
+    line-height: 1;
+  }
+
+  .current .desc {
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  .current .pop {
+    font-size: 12px;
+    color: #3a7bd5;
+    margin-top: 2px;
+  }
+
+  .sub-days {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-top: 1px solid #eee;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 12px;
+  }
+
+  .sub-days .sub {
+    flex: 1;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .sub-days .sub .label {
+    color: #888;
+    margin-bottom: 4px;
+  }
+
+  .sub-days .sub .s-icon {
+    font-size: 20px;
+    margin-bottom: 2px;
+  }
+
+  .sub-days .sub .s-desc {
+    font-size: 11px;
+    color: #555;
+    line-height: 1.3;
+  }
+
+  .forecast {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .forecast .day {
+    text-align: center;
+    flex: 1;
+    font-size: 12px;
+  }
+
+  .forecast .day .label {
+    color: #888;
+    margin-bottom: 4px;
+  }
+
+  .forecast .day .f-icon {
+    font-size: 20px;
+    margin-bottom: 4px;
+  }
+
+  .forecast .day .hi {
+    font-weight: 700;
+  }
+
+  .forecast .day .lo {
+    color: #999;
+    margin-left: 2px;
+  }
+
+  .loading, .error {
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    padding: 30px 0;
+  }
+
+  .error {
+    color: #c0392b;
+  }
+
+  .refresh-btn {
+    display: block;
+    margin: 20px auto 0;
+    background: #222;
+    color: #fff;
+    border: none;
+    border-radius: 20px;
+    padding: 10px 24px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .refresh-btn:active {
+    opacity: 0.8;
+  }
+
+  .source {
+    text-align: center;
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>天気予報</h1>
+  <p>高松・東京・名古屋（気象庁データ）</p>
+</header>
+
+<div class="container">
+  <div class="cards" id="cards">
+    <div class="loading">読み込み中...</div>
+  </div>
+  <button class="refresh-btn" id="refreshBtn">更新する</button>
+  <div class="source">データ提供: 気象庁</div>
+</div>
+
+<script>
+  const CITIES = [
+    { name: '高松', areaCode: '370000' },
+    { name: '東京', areaCode: '130000' },
+    { name: '名古屋', areaCode: '230000' }
+  ];
+
+  // JMA天気コードの大まかな分類（100番台=晴れ, 200番台=くもり, 300番台=雨, 400番台=雪）
+  const CODE_LABEL = {
+    '100': '晴れ', '101': '晴れ時々くもり', '110': '晴れ後くもり', '111': '晴れ後くもり',
+    '200': 'くもり', '201': 'くもり時々晴れ', '202': 'くもり一時雨', '203': 'くもり時々雨',
+    '210': 'くもり後晴れ', '211': 'くもり後晴れ', '214': 'くもり後雨',
+    '300': '雨', '301': '雨時々晴れ', '302': '雨時々くもり', '303': '雨時々雪',
+    '400': '雪', '401': '雪時々晴れ', '402': '雪時々くもり', '403': '雪時々雨'
+  };
+
+  function codeCategory(code) {
+    const c = String(code || '');
+    if (c.startsWith('1')) return { icon: '☀️', label: '晴れ' };
+    if (c.startsWith('2')) return { icon: '☁️', label: 'くもり' };
+    if (c.startsWith('3')) return { icon: '🌧️', label: '雨' };
+    if (c.startsWith('4')) return { icon: '❄️', label: '雪' };
+    return { icon: '❓', label: '不明' };
+  }
+
+  function iconFromText(text) {
+    if (!text) return null;
+    if (text.includes('雷')) return '⛈️';
+    if (text.includes('雪')) return '❄️';
+    if (text.includes('霧')) return '🌫️';
+    if (text.includes('雨')) return '🌧️';
+    if (text.includes('曇') || text.includes('くもり')) return '☁️';
+    if (text.includes('晴')) return '☀️';
+    return null;
+  }
+
+  function weatherDisplay(code, text) {
+    const cat = codeCategory(code);
+    const icon = iconFromText(text) || cat.icon;
+    const label = text || CODE_LABEL[String(code)] || cat.label;
+    return { icon, label };
+  }
+
+  function formatUpdated(iso) {
+    const d = new Date(iso);
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' +
+      String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ' 時点';
+  }
+
+  function formatDayLabel(iso, index) {
+    if (index === 0) return '今日';
+    if (index === 1) return '明日';
+    if (index === 2) return '明後日';
+    const d = new Date(iso);
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  }
+
+  async function fetchCityWeather(city) {
+    const url = `https://www.jma.go.jp/bosai/forecast/data/forecast/${city.areaCode}.json`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('取得に失敗しました');
+    return res.json();
+  }
+
+  function renderCard(city, data) {
+    const shortTerm = data[0];
+    const weekly = data[1];
+
+    const shortArea = shortTerm.timeSeries[0].areas[0];
+    const shortTimeDefines = shortTerm.timeSeries[0].timeDefines;
+    const popsArea = shortTerm.timeSeries[1].areas[0];
+    const pops = popsArea.pops;
+
+    // 本日の降水確率（当日分の中で最大値）
+    const todayPop = Math.max(...pops.slice(0, 2).map(p => parseInt(p, 10) || 0));
+
+    const todayInfo = weatherDisplay(shortArea.weatherCodes[0], shortArea.weathers[0]);
+
+    // 明日・明後日の簡易表示
+    let subDaysHtml = '';
+    for (let i = 1; i <= 2; i++) {
+      const info = weatherDisplay(shortArea.weatherCodes[i], shortArea.weathers[i]);
+      subDaysHtml += `
+        <div class="sub">
+          <div class="label">${formatDayLabel(shortTimeDefines[i], i)}</div>
+          <div class="s-icon">${info.icon}</div>
+          <div class="s-desc">${info.label}</div>
+        </div>`;
+    }
+
+    // 週間予報（3日目以降・気温データがある分）
+    const weeklyCodes = weekly.timeSeries[0].areas[0].weatherCodes;
+    const weeklyTimeDefines = weekly.timeSeries[0].timeDefines;
+    const tempArea = weekly.timeSeries[1].areas[0];
+
+    let forecastHtml = '';
+    for (let i = 2; i < weeklyCodes.length; i++) {
+      if (!tempArea.tempsMax[i]) continue;
+      const info = weatherDisplay(weeklyCodes[i], null);
+      forecastHtml += `
+        <div class="day">
+          <div class="label">${formatDayLabel(weeklyTimeDefines[i], i + 1)}</div>
+          <div class="f-icon">${info.icon}</div>
+          <div><span class="hi">${tempArea.tempsMax[i]}°</span><span class="lo">${tempArea.tempsMin[i]}°</span></div>
+        </div>`;
+    }
+
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div class="city-name">${city.name}</div>
+          <div class="updated">${formatUpdated(shortTerm.reportDatetime)}</div>
+        </div>
+        <div class="current">
+          <div class="icon">${todayInfo.icon}</div>
+          <div>
+            <div class="desc">${todayInfo.label}</div>
+            <div class="pop">降水確率 ${isFinite(todayPop) ? todayPop : '--'}%</div>
+          </div>
+        </div>
+        <div class="sub-days">
+          ${subDaysHtml}
+        </div>
+        <div class="forecast">
+          ${forecastHtml}
+        </div>
+      </div>`;
+  }
+
+  async function loadWeather() {
+    const cardsEl = document.getElementById('cards');
+    cardsEl.innerHTML = '<div class="loading">読み込み中...</div>';
+
+    try {
+      const results = await Promise.all(CITIES.map(fetchCityWeather));
+      cardsEl.innerHTML = CITIES.map((city, i) => renderCard(city, results[i])).join('');
+    } catch (err) {
+      cardsEl.innerHTML = `<div class="error">エラー: ${err.message}</div>`;
+    }
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', loadWeather);
+
+  loadWeather();
+</script>
+
+</body>
+</html>
